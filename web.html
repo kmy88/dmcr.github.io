@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Boom - Baseball Pitching Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Pretendard:wght@400;900&display=swap');
+
+        body {
+            margin: 0;
+            background-color: #020617;
+            color: white;
+            overflow: hidden;
+            font-family: 'Pretendard', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            touch-action: none;
+        }
+        .game-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            height: 100%;
+            max-height: 1000px; 
+            aspect-ratio: 600 / 1000;
+            margin: auto;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            border: 2px solid #1e293b;
+            border-radius: 12px;
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.2);
+            display: block;
+            touch-action: none;
+        }
+        .ui-panel { pointer-events: none; }
+        
+        #vignette {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            box-shadow: inset 0 0 80px rgba(249, 115, 22, 0);
+            transition: box-shadow 0.4s ease;
+            pointer-events: none;
+            border-radius: 12px;
+            z-index: 10;
+        }
+        .active-slow-mo {
+            box-shadow: inset 0 0 150px rgba(249, 115, 22, 0.7) !important;
+        }
+        .fever-vignette {
+            box-shadow: inset 0 0 150px rgba(255, 100, 0, 0.5), inset 0 0 300px rgba(255, 200, 0, 0.3) !important;
+        }
+
+        #openingScreen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at center, #1e1b4b 0%, #020617 100%);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 12px;
+        }
+        .title-text {
+            font-family: 'Black Han Sans', sans-serif;
+            font-size: 6rem;
+            color: #fb923c;
+            text-shadow: 0 0 30px rgba(251, 146, 60, 0.6), 5px 5px 0px #7c2d12;
+            margin-bottom: 2rem;
+            animation: title-bounce 1s infinite ease-in-out;
+        }
+        @keyframes title-bounce {
+            0%, 100% { transform: translateY(0) rotate(-2deg); }
+            50% { transform: translateY(-15px) rotate(2deg); }
+        }
+        .start-btn {
+            background: linear-gradient(to bottom, #f97316, #ea580c);
+            padding: 1.2rem 4rem;
+            border-radius: 99px;
+            font-weight: 900;
+            font-size: 1.5rem;
+            letter-spacing: 0.1rem;
+            box-shadow: 0 10px 0px #9a3412, 0 15px 30px rgba(0,0,0,0.5);
+            transition: all 0.1s;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+        .start-btn:active {
+            transform: translateY(5px);
+            box-shadow: 0 5px 0px #9a3412, 0 5px 15px rgba(0,0,0,0.5);
+        }
+
+        #effectMsg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Black Han Sans', sans-serif;
+            font-size: 3rem;
+            color: #10b981;
+            text-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+            opacity: 0;
+            z-index: 30;
+            transition: all 0.3s;
+        }
+        .show-effect {
+            opacity: 1 !important;
+            transform: translate(-50%, -80%) scale(1.2) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- 오프닝 화면 -->
+        <div id="openingScreen">
+            <h1 class="title-text">Boom</h1>
+            <div class="start-btn" onclick="startGame()">START</div>
+            <p id="subTitle" class="mt-8 text-blue-400 font-bold animate-pulse text-sm">드래그하여 구질을 조절하세요!</p>
+        </div>
+
+        <!-- 효과 알림 텍스트 -->
+        <div id="effectMsg">EFFECT!</div>
+
+        <!-- 게임 캔버스 -->
+        <canvas id="gameCanvas" width="600" height="1000"></canvas>
+        <div id="vignette"></div>
+
+        <!-- UI 레이어 -->
+        <div id="gameUI" class="absolute top-0 left-0 w-full h-full p-4 flex flex-col justify-between ui-panel z-20 hidden">
+            <div class="flex justify-between items-start">
+                <div class="bg-slate-900/80 backdrop-blur-md p-3 rounded-xl border border-blue-500/30">
+                    <p class="text-[10px] uppercase tracking-widest text-blue-400 font-bold">Stage <span id="stageNumDisplay">1</span></p>
+                    <p id="scoreDisplay" class="text-2xl font-black text-white leading-none">00000</p>
+                </div>
+                <div class="text-center">
+                    <h1 class="text-lg font-black italic text-orange-400 uppercase tracking-tighter">Pitching Boom</h1>
+                    <p id="pitchHint" class="text-[10px] text-white/50 font-bold mt-1">DRAG FOR PITCH TYPE</p>
+                </div>
+                <div class="bg-slate-900/80 backdrop-blur-md p-3 rounded-xl border border-orange-500/30 text-right">
+                    <p class="text-[10px] uppercase tracking-widest text-orange-400 font-bold">Balls Left</p>
+                    <div id="ballContainer" class="flex gap-1 justify-end mt-1"></div>
+                </div>
+            </div>
+
+            <!-- 결과 메시지 -->
+            <div id="messageOverlay" class="hidden flex flex-col items-center justify-center grow pb-40">
+                <div class="bg-slate-900/95 backdrop-blur-2xl p-8 rounded-3xl border border-white/10 text-center shadow-2xl mx-4">
+                    <h2 id="statusTitle" class="text-5xl font-black mb-2 text-orange-400">FEVER!</h2>
+                    <p id="statusDesc" class="text-slate-400 mb-6 font-medium">모든 목표를 정화했습니다.</p>
+                    <button id="nextBtn" onclick="nextStage()" class="pointer-events-auto bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-400 hover:to-yellow-400 px-8 py-3 rounded-xl font-black text-lg text-white transition-transform active:scale-95 shadow-lg">
+                        다음 스테이지
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const openingScreen = document.getElementById('openingScreen');
+        const gameUI = document.getElementById('gameUI');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const ballContainer = document.getElementById('ballContainer');
+        const messageOverlay = document.getElementById('messageOverlay');
+        const statusTitle = document.getElementById('statusTitle');
+        const statusDesc = document.getElementById('statusDesc');
+        const vignette = document.getElementById('vignette');
+        const stageNumDisplay = document.getElementById('stageNumDisplay');
+        const nextBtn = document.getElementById('nextBtn');
+        const effectMsg = document.getElementById('effectMsg');
+
+        // 배경 이미지 로드
+        const bgImage = new Image();
+        bgImage.src = 'bg.jpg';
+
+        // 물리 및 설정 상수
+        const GRAVITY = 0.22;
+        const FRICTION = 0.992;
+        const BOUNCE = 0.72;
+        const BALL_RADIUS = 9;
+        const PEG_RADIUS = 11;
+
+        // 게임 상태
+        let gameState = 'OPENING';
+        let currentStage = 1;
+        let ballsLeft = 10;
+        let score = 0;
+        let isGameOver = false;
+        let isFever = false;
+        let activeBall = null; 
+        let pegs = [];
+        let bats = []; 
+        let indestructibleWalls = [];
+        let particles = [];
+        let timeScale = 1.0;
+        let zoomScale = 1.0;
+        let cameraX = 300;
+        let cameraY = 500;
+        let feverTimer = 0;
+        
+        let currentTheme = { top: '#1e1b4b', bottom: '#020617', grid: 'rgba(59, 130, 246, 0.1)' };
+        let bucket = { x: 300, y: 960, width: 100, height: 25, dir: 1, speed: 2.5 };
+        let paddle = { x: 300, y: 880, width: 140, height: 12, dir: -1, speed: 4.2, baseWidth: 140 };
+        
+        let isDragging = false;
+        let dragStartPos = { x: 0, y: 0 };
+        let dragPoints = [];
+        let currentPointerPos = { x: 300, y: 500 };
+        let charRotation = 0;
+        let isShootingAnimation = false;
+
+        class Particle {
+            constructor(x, y, color, speedScale = 1) {
+                this.x = x; this.y = y;
+                const angle = Math.random() * Math.PI * 2;
+                const force = (Math.random() * 8 + 2) * speedScale;
+                this.vx = Math.cos(angle) * force;
+                this.vy = Math.sin(angle) * force;
+                this.life = 1.0;
+                this.color = color;
+                this.size = Math.random() * 3 + 1;
+                this.gravity = 0.1;
+                this.friction = 0.96;
+            }
+            update() {
+                this.vx *= this.friction; this.vy *= this.friction;
+                this.vy += this.gravity;
+                this.x += this.vx; this.y += this.vy;
+                this.life -= 0.015;
+            }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function createExplosion(x, y, color, count = 15, speed = 1) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color, speed));
+            }
+        }
+
+        function spawnFirework() {
+            const colors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff', '#ffa500'];
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * (canvas.height * 0.5);
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            createExplosion(x, y, color, 40, 1.5);
+        }
+
+        function showEffectMessage(text, color = '#10b981') {
+            effectMsg.textContent = text;
+            effectMsg.style.color = color;
+            effectMsg.classList.add('show-effect');
+            setTimeout(() => {
+                effectMsg.classList.remove('show-effect');
+            }, 1500);
+        }
+
+        function drawBaseball(ball) {
+            ctx.save();
+            ctx.translate(ball.x, ball.y);
+            ctx.rotate((ball.x + ball.y) * 0.1);
+            if (ball.isPiercing) {
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#10b981';
+            }
+            ctx.beginPath();
+            ctx.arc(0, 0, BALL_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = ball.isPiercing ? '#10b981' : '#f8fafc';
+            ctx.fill();
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(-BALL_RADIUS*0.7, 0, BALL_RADIUS*0.8, -0.8, 0.8); ctx.stroke();
+            ctx.beginPath(); ctx.arc(BALL_RADIUS*0.7, 0, BALL_RADIUS*0.8, Math.PI-0.8, Math.PI+0.8); ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawBat(bat) {
+            if (!bat.active) return;
+            ctx.save();
+            ctx.translate(bat.x, bat.y);
+            ctx.rotate(bat.rotation);
+            ctx.fillStyle = '#444';
+            ctx.beginPath();
+            ctx.roundRect(-bat.width/2, -bat.height/4, bat.width/3, bat.height/2, 2);
+            ctx.fill();
+            const grad = ctx.createLinearGradient(0, -bat.height/2, 0, bat.height/2);
+            grad.addColorStop(0, '#d6d3d1');
+            grad.addColorStop(0.5, '#78716c');
+            grad.addColorStop(1, '#d6d3d1');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.roundRect(-bat.width/6, -bat.height/2, bat.width*0.66, bat.height, 5);
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('BAT ' + bat.hitsLeft, bat.width/4, 4);
+            ctx.restore();
+        }
+
+        function drawIndestructible(wall) {
+            ctx.save();
+            ctx.translate(wall.x, wall.y);
+            ctx.beginPath();
+            for(let i=0; i<6; i++) {
+                const angle = (i / 6) * Math.PI * 2;
+                const x = Math.cos(angle) * wall.radius;
+                const y = Math.sin(angle) * wall.radius;
+                if(i===0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, wall.radius);
+            grad.addColorStop(0, '#cbd5e1');
+            grad.addColorStop(0.8, '#475569');
+            grad.addColorStop(1, '#020617');
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function startGame() {
+            gameState = 'PLAYING';
+            openingScreen.style.display = 'none';
+            gameUI.classList.remove('hidden');
+            initLevel();
+            animate();
+        }
+
+        function initLevel() {
+            isGameOver = false;
+            isFever = false;
+            activeBall = null;
+            pegs = [];
+            bats = [];
+            indestructibleWalls = [];
+            particles = [];
+            feverTimer = 0;
+            timeScale = 1.0;
+            zoomScale = 1.0;
+            cameraX = 300;
+            cameraY = 500;
+            paddle.width = paddle.baseWidth; 
+            
+            messageOverlay.classList.add('hidden');
+            vignette.classList.remove('active-slow-mo', 'fever-vignette');
+            stageNumDisplay.textContent = currentStage;
+            
+            ballsLeft = currentStage === 1 ? 10 : (currentStage === 2 ? 8 : 6);
+            const batCount = currentStage === 1 ? 4 : (currentStage === 2 ? 8 : 12);
+            const bumperCount = 12 + currentStage * 5; 
+
+            const margin = 60;
+            const areaWidth = canvas.width - margin * 2;
+            const areaHeight = 600; 
+            const startY = 180;
+            
+            for(let i=0; i<bumperCount; i++) {
+                const isSide = Math.random() > 0.4;
+                indestructibleWalls.push({
+                    x: isSide ? (Math.random() > 0.5 ? 25 + Math.random() * 30 : canvas.width - (25 + Math.random() * 30)) : Math.random() * canvas.width,
+                    y: startY + Math.random() * areaHeight,
+                    radius: 12 + Math.random() * 10
+                });
+            }
+            
+            const pegCount = 50 + Math.floor(Math.random() * 20);
+            let attempts = 0;
+            while (pegs.length < pegCount && attempts < 3000) {
+                attempts++;
+                const x = margin + Math.random() * areaWidth;
+                const y = startY + Math.random() * areaHeight;
+                let tooClose = false;
+                for (let p of pegs) if (Math.sqrt((p.x - x)**2 + (p.y - y)**2) < 45) { tooClose = true; break; }
+                for (let w of indestructibleWalls) if (Math.sqrt((w.x - x)**2 + (w.y - y)**2) < 40) { tooClose = true; break; }
+
+                if (!tooClose) {
+                    const rand = Math.random();
+                    let type = rand < 0.20 ? 'orange' : (rand < 0.26 ? 'green' : 'blue');
+                    pegs.push({ x, y, type, active: true, hit: false });
+                }
+            }
+
+            for(let i=0; i<batCount; i++) {
+                bats.push({
+                    x: margin + Math.random() * areaWidth,
+                    y: startY + Math.random() * areaHeight,
+                    width: 70 + Math.random() * 40,
+                    height: 18,
+                    rotation: (Math.random() - 0.5) * Math.PI,
+                    hitsLeft: 3,
+                    active: true
+                });
+            }
+            updateBallUI();
+        }
+
+        function updateBallUI() {
+            ballContainer.innerHTML = '';
+            for (let i = 0; i < ballsLeft; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'w-1.5 h-4 sm:w-2 sm:h-5 rounded-full bg-white border border-red-500 shadow-sm';
+                ballContainer.appendChild(dot);
+            }
+        }
+
+        function getPointerPos(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function calculatePitch() {
+            if (dragPoints.length < 5) return { type: 'FASTBALL', curveForce: 0 };
+            const start = dragStartPos;
+            const end = dragPoints[dragPoints.length - 1];
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            let curvatureSum = 0;
+            const lineMag = Math.sqrt(dx*dx + dy*dy);
+            if (lineMag === 0) return { type: 'FASTBALL', curveForce: 0 };
+            
+            dragPoints.forEach(p => {
+                const dist = ((dy * p.x) - (dx * p.y) + (end.x * start.y) - (end.y * start.x)) / lineMag;
+                curvatureSum += dist;
+            });
+            const avgCurvature = curvatureSum / dragPoints.length;
+            if (Math.abs(avgCurvature) > 12) {
+                return { type: 'SLIDER', curveForce: -avgCurvature * 0.006 };
+            }
+            return { type: 'FASTBALL', curveForce: 0 };
+        }
+
+        function shoot() {
+            if (activeBall || isGameOver || ballsLeft <= 0 || gameState !== 'PLAYING') return;
+            const pitch = calculatePitch();
+            isShootingAnimation = true;
+            setTimeout(() => isShootingAnimation = false, 150);
+            
+            const speed = pitch.type === 'FASTBALL' ? 16 : 14;
+            activeBall = {
+                x: 300 + Math.cos(charRotation) * 45,
+                y: 55 + Math.sin(charRotation) * 45,
+                vx: Math.cos(charRotation) * speed,
+                vy: Math.sin(charRotation) * speed,
+                trail: [],
+                curveForce: pitch.curveForce,
+                isPiercing: false 
+            };
+            ballsLeft--;
+            updateBallUI();
+            createExplosion(activeBall.x, activeBall.y, '#ffffff', 10);
+        }
+
+        const onDown = (e) => {
+            if (activeBall || isGameOver || gameState !== 'PLAYING') return;
+            const pos = getPointerPos(e.touches ? e.touches[0].clientX : e.clientX, e.touches ? e.touches[0].clientY : e.clientY);
+            isDragging = true;
+            dragStartPos = pos;
+            dragPoints = [pos];
+            currentPointerPos = pos;
+        };
+        const onMove = (e) => {
+            const pos = getPointerPos(e.touches ? e.touches[0].clientX : e.clientX, e.touches ? e.touches[0].clientY : e.clientY);
+            currentPointerPos = pos;
+            if (isDragging) {
+                dragPoints.push(pos);
+                if (dragPoints.length > 30) dragPoints.shift();
+            }
+        };
+        const onUp = () => {
+            if (isDragging) { shoot(); isDragging = false; dragPoints = []; }
+        };
+
+        canvas.addEventListener('mousedown', onDown);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        canvas.addEventListener('touchstart', (e) => { onDown(e); e.preventDefault(); }, { passive: false });
+        window.addEventListener('touchmove', (e) => { onMove(e); e.preventDefault(); }, { passive: false });
+        window.addEventListener('touchend', onUp);
+
+        function applyRandomEffect() {
+            const effects = ['SHRINK', 'SLOW', 'PIERCE'];
+            const chosen = effects[Math.floor(Math.random() * effects.length)];
+            
+            switch(chosen) {
+                case 'SHRINK':
+                    paddle.width = 70;
+                    showEffectMessage("PADDLE SHRINK!", "#f87171");
+                    break;
+                case 'SLOW':
+                    if (activeBall) {
+                        activeBall.vx *= 0.5;
+                        activeBall.vy *= 0.5;
+                    }
+                    showEffectMessage("SLOW MOTION!", "#60a5fa");
+                    break;
+                case 'PIERCE':
+                    if (activeBall) activeBall.isPiercing = true;
+                    showEffectMessage("PIERCING BALL!", "#10b981");
+                    break;
+            }
+        }
+
+        function update() {
+            if (gameState !== 'PLAYING' || (isGameOver && !isFever)) return;
+            if (isFever) {
+                feverTimer++;
+                if (feverTimer % 20 === 0) spawnFirework();
+            }
+
+            const orangePegs = pegs.filter(p => p.type === 'orange' && p.active && !p.hit);
+            if (activeBall && orangePegs.length === 1 && !isFever) {
+                const lp = orangePegs[0];
+                const d = Math.sqrt((activeBall.x - lp.x)**2 + (activeBall.y - lp.y)**2);
+                if (d < 150) {
+                    timeScale = Math.max(0.12, d / 150);
+                    zoomScale = 1.0 + (1.0 - (d / 150)) * 0.8;
+                    cameraX = (activeBall.x + lp.x) / 2;
+                    cameraY = (activeBall.y + lp.y) / 2;
+                    vignette.classList.add('active-slow-mo');
+                } else {
+                    timeScale = 1.0; zoomScale = 1.0; vignette.classList.remove('active-slow-mo');
+                }
+            } else if (!isFever) {
+                timeScale = 1.0; zoomScale = 1.0; vignette.classList.remove('active-slow-mo');
+            }
+
+            bucket.x += bucket.dir * bucket.speed * timeScale;
+            if (bucket.x < 80 || bucket.x > canvas.width - 80) bucket.dir *= -1;
+
+            paddle.x += paddle.dir * paddle.speed * timeScale;
+            if (paddle.x < paddle.width/2 + 20 || paddle.x > canvas.width - paddle.width/2 - 20) paddle.dir *= -1;
+
+            if (activeBall) {
+                activeBall.trail.push({ x: activeBall.x, y: activeBall.y });
+                if (activeBall.trail.length > 20) activeBall.trail.shift();
+
+                activeBall.vx += activeBall.curveForce * timeScale;
+                activeBall.vy += GRAVITY * timeScale;
+                activeBall.vx *= Math.pow(FRICTION, timeScale);
+                activeBall.vy *= Math.pow(FRICTION, timeScale);
+                activeBall.x += activeBall.vx * timeScale;
+                activeBall.y += activeBall.vy * timeScale;
+
+                if (activeBall.x < BALL_RADIUS) { activeBall.x = BALL_RADIUS; activeBall.vx *= -BOUNCE; }
+                else if (activeBall.x > canvas.width - BALL_RADIUS) { activeBall.x = canvas.width - BALL_RADIUS; activeBall.vx *= -BOUNCE; }
+
+                pegs.forEach(peg => {
+                    if (!peg.active) return;
+                    const d = Math.sqrt((activeBall.x - peg.x)**2 + (activeBall.y - peg.y)**2);
+                    if (d < BALL_RADIUS + PEG_RADIUS) {
+                        if (!activeBall.isPiercing) {
+                            const nx = (activeBall.x - peg.x) / d;
+                            const ny = (activeBall.y - peg.y) / d;
+                            const dot = activeBall.vx * nx + activeBall.vy * ny;
+                            activeBall.vx = (activeBall.vx - 2 * dot * nx) * BOUNCE;
+                            activeBall.vy = (activeBall.vy - 2 * dot * ny) * BOUNCE;
+                            activeBall.x += nx * ((BALL_RADIUS + PEG_RADIUS) - d);
+                        }
+
+                        if (!peg.hit) {
+                            peg.hit = true;
+                            if (peg.type === 'green') {
+                                applyRandomEffect();
+                                createExplosion(peg.x, peg.y, '#10b981', 30);
+                            } else {
+                                score += peg.type === 'orange' ? 500 : 50;
+                                scoreDisplay.textContent = score.toString().padStart(5, '0');
+                                createExplosion(peg.x, peg.y, peg.type === 'orange' ? '#f97316' : '#3b82f6');
+                            }
+                        }
+                    }
+                });
+
+                indestructibleWalls.forEach(wall => {
+                    const d = Math.sqrt((activeBall.x - wall.x)**2 + (activeBall.y - wall.y)**2);
+                    if (d < BALL_RADIUS + wall.radius) {
+                        const nx = (activeBall.x - wall.x) / d;
+                        const ny = (activeBall.y - wall.y) / d;
+                        const dot = activeBall.vx * nx + activeBall.vy * ny;
+                        activeBall.vx = (activeBall.vx - 2 * dot * nx) * (BOUNCE * 1.15);
+                        activeBall.vy = (activeBall.vy - 2 * dot * ny) * (BOUNCE * 1.15);
+                        activeBall.x += nx * ((BALL_RADIUS + wall.radius) - d);
+                        createExplosion(activeBall.x, activeBall.y, '#ffffff', 5, 0.5);
+                    }
+                });
+
+                bats.forEach(bat => {
+                    if (!bat.active) return;
+                    const dx = activeBall.x - bat.x;
+                    const dy = activeBall.y - bat.y;
+                    const rotatedX = dx * Math.cos(-bat.rotation) - dy * Math.sin(-bat.rotation);
+                    const rotatedY = dx * Math.sin(-bat.rotation) + dy * Math.cos(-bat.rotation);
+                    if (Math.abs(rotatedX) < bat.width/2 + BALL_RADIUS && Math.abs(rotatedY) < bat.height/2 + BALL_RADIUS) {
+                        if (Math.abs(rotatedY) > Math.abs(rotatedX) * (bat.height/bat.width)) activeBall.vy *= -BOUNCE;
+                        else activeBall.vx *= -BOUNCE;
+                        bat.hitsLeft--;
+                        createExplosion(activeBall.x, activeBall.y, '#94a3b8', 10);
+                        if (bat.hitsLeft <= 0) { bat.active = false; score += 200; createExplosion(bat.x, bat.y, '#64748b', 30); }
+                    }
+                });
+
+                if (activeBall.y + BALL_RADIUS > paddle.y && activeBall.y < paddle.y + paddle.height &&
+                    activeBall.x > paddle.x - paddle.width/2 && activeBall.x < paddle.x + paddle.width/2) {
+                    if (activeBall.vy > 0) {
+                        activeBall.y = paddle.y - BALL_RADIUS; activeBall.vy *= -1.35;
+                        activeBall.vx += (activeBall.x - paddle.x) * 0.15 + (paddle.dir * 3);
+                    }
+                }
+
+                if (activeBall.y > bucket.y - 12 && activeBall.y < bucket.y + 12 &&
+                    activeBall.x > bucket.x - bucket.width/2 && activeBall.x < bucket.x + bucket.width/2) {
+                    ballsLeft++; updateBallUI(); finishTurn();
+                } else if (activeBall.y > canvas.height + 50) {
+                    finishTurn();
+                }
+            }
+            particles.forEach((p, i) => { p.update(); if (p.life <= 0) particles.splice(i, 1); });
+        }
+
+        function finishTurn() {
+            activeBall = null; 
+            timeScale = 1.0; 
+            zoomScale = 1.0;
+            vignette.classList.remove('active-slow-mo');
+            pegs.forEach(p => { if (p.hit) p.active = false; });
+            const orangeLeft = pegs.filter(p => p.type === 'orange' && p.active).length;
+            if (orangeLeft === 0) endGame(true);
+            else if (ballsLeft <= 0) endGame(false);
+        }
+
+        function endGame(isWin) {
+            isGameOver = true;
+            messageOverlay.classList.remove('hidden');
+            if (isWin) {
+                isFever = true;
+                vignette.classList.add('fever-vignette');
+                statusTitle.className = "text-5xl font-black mb-2 text-orange-400"; 
+                if (currentStage < 3) { statusTitle.textContent = "STAGE CLEAR!"; nextBtn.textContent = "다음 스테이지"; }
+                else { statusTitle.textContent = "GRAND SLAM!"; nextBtn.textContent = "처음부터 다시"; }
+            } else { 
+                statusTitle.textContent = "GAME OVER"; 
+                statusTitle.className = "text-4xl font-black mb-2 text-red-500"; 
+                statusDesc.textContent = "공을 모두 소모했습니다."; 
+                nextBtn.textContent = "다시 도전"; 
+            }
+        }
+
+        function nextStage() {
+            if (isGameOver && !isFever) initLevel();
+            else if (currentStage < 3) { currentStage++; initLevel(); }
+            else { currentStage = 1; score = 0; initLevel(); }
+        }
+
+        function drawCharacter() {
+            const centerX = 300; const centerY = 55;
+            if (isDragging) charRotation = Math.atan2(currentPointerPos.y - dragStartPos.y, currentPointerPos.x - dragStartPos.x);
+            else charRotation = Math.atan2(currentPointerPos.y - centerY, currentPointerPos.x - centerX);
+            
+            ctx.save();
+            ctx.translate(centerX, centerY); ctx.rotate(charRotation);
+            ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.roundRect(-5, -15, 60, 30, 8); ctx.fill();
+            if (isShootingAnimation) ctx.translate(-12, 0);
+            ctx.fillStyle = '#1e293b'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(0, 0, 35, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(12, -10, 7, 0, Math.PI * 2); ctx.arc(12, 10, 7, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(15, -10, 3, 0, Math.PI * 2); ctx.arc(15, 10, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            if (zoomScale > 1.0) {
+                ctx.translate(canvas.width/2, canvas.height/2);
+                ctx.scale(zoomScale, zoomScale);
+                ctx.translate(-cameraX, -cameraY);
+            }
+
+            // 배경 이미지 또는 그라데이션 그리기
+            if (bgImage.complete && bgImage.naturalWidth > 0) {
+                // 캔버스에 이미지가 꽉 차도록 비율 유지하며 그리기 (Cover 방식)
+                const imgRatio = bgImage.width / bgImage.height;
+                const canvasRatio = canvas.width / canvas.height;
+                let drawWidth, drawHeight, offsetX, offsetY;
+
+                if (imgRatio > canvasRatio) {
+                    drawHeight = canvas.height;
+                    drawWidth = canvas.height * imgRatio;
+                    offsetX = (canvas.width - drawWidth) / 2;
+                    offsetY = 0;
+                } else {
+                    drawWidth = canvas.width;
+                    drawHeight = canvas.width / imgRatio;
+                    offsetX = 0;
+                    offsetY = (canvas.height - drawHeight) / 2;
+                }
+                ctx.drawImage(bgImage, offsetX, offsetY, drawWidth, drawHeight);
+                
+                // 가독성을 위해 배경에 약간의 어두운 필터 적용
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            } else {
+                const grad = ctx.createRadialGradient(300, 0, 0, 300, 500, 1000);
+                grad.addColorStop(0, '#1e1b4b'); grad.addColorStop(1, '#020617');
+                ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            pegs.forEach(p => {
+                if (!p.active) return;
+                ctx.save();
+                ctx.shadowBlur = p.type === 'orange' ? 15 : 5;
+                ctx.shadowColor = p.type === 'orange' ? '#f97316' : (p.type === 'green' ? '#10b981' : '#3b82f6');
+                ctx.fillStyle = p.hit ? '#fff' : (p.type === 'orange' ? '#f97316' : (p.type === 'green' ? '#10b981' : '#3b82f6'));
+                ctx.beginPath(); ctx.arc(p.x, p.y, PEG_RADIUS, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            });
+
+            indestructibleWalls.forEach(drawIndestructible);
+            bats.forEach(drawBat);
+
+            if (activeBall) {
+                activeBall.trail.forEach((t, i) => {
+                    ctx.globalAlpha = (i / activeBall.trail.length) * 0.4;
+                    ctx.fillStyle = activeBall.isPiercing ? '#10b981' : '#fff';
+                    ctx.beginPath(); ctx.arc(t.x, t.y, BALL_RADIUS * (i / activeBall.trail.length), 0, Math.PI * 2); ctx.fill();
+                });
+                ctx.globalAlpha = 1.0;
+                drawBaseball(activeBall);
+            }
+            
+            ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.roundRect(paddle.x-paddle.width/2, paddle.y, paddle.width, paddle.height, 6); ctx.fill();
+            ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.roundRect(bucket.x-bucket.width/2, bucket.y, bucket.width, bucket.height, 4); ctx.fill();
+            particles.forEach(p => p.draw());
+            ctx.restore();
+
+            if (isDragging && dragPoints.length > 1) {
+                ctx.save(); ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; ctx.lineWidth = 3; ctx.setLineDash([5, 5]);
+                ctx.beginPath(); ctx.moveTo(dragPoints[0].x, dragPoints[0].y);
+                for(let i=1; i<dragPoints.length; i++) ctx.lineTo(dragPoints[i].x, dragPoints[i].y);
+                ctx.stroke();
+                const pitch = calculatePitch();
+                ctx.fillStyle = pitch.type === 'FASTBALL' ? '#fff' : '#fb923c';
+                ctx.font = 'bold 20px Pretendard'; ctx.textAlign = 'center';
+                ctx.fillText(pitch.type, dragStartPos.x, dragStartPos.y - 30); ctx.restore();
+            }
+
+            if (gameState === 'PLAYING') {
+                if (!activeBall && !isGameOver) {
+                    ctx.save(); ctx.setLineDash([5, 12]); ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                    ctx.beginPath(); ctx.moveTo(300, 55);
+                    ctx.lineTo(300 + Math.cos(charRotation) * 1000, 55 + Math.sin(charRotation) * 1000);
+                    ctx.stroke(); ctx.restore();
+                }
+                drawCharacter();
+            }
+        }
+
+        function animate() {
+            update();
+            draw();
+            requestAnimationFrame(animate);
+        }
+    </script>
+</body>
+</html>
